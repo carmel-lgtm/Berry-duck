@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ברווז וקבנוסים 🦆🌭</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-height: 100vh; font-family: Arial, sans-serif;
+    user-select: none; overflow: hidden;
+    touch-action: none;
+  }
+  h1 { color: #ffd700; margin-bottom: 8px; font-size: 1.4em; }
+  canvas { border: 3px solid #ffd700; border-radius: 8px; display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<h1>🦆 ברווז וקבנוסים 🌭</h1>
+<canvas id="c" width="420" height="640"></canvas>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const GROUND_Y = H - 190;
+const DUCK_SPEED = 4;
+
+// Big visible buttons at the bottom
+const PAD = 12;
+const BTN_Y = H - 150;
+const BTN_H = 130;
+const BTN_W = 120;
+
+const LEFT_BTN  = { x: PAD,              y: BTN_Y, w: BTN_W, h: BTN_H };
+const RIGHT_BTN = { x: W - PAD - BTN_W,  y: BTN_Y, w: BTN_W, h: BTN_H };
+const GRAB_BTN  = { x: W/2 - 65,         y: BTN_Y, w: 130,   h: BTN_H };
+
+let score, duckX, duckDir, moving, kabX, kabVisible, kabTimer, kabLifetime,
+    flashMsg, flashTimer, gameOver, spawnTimeout;
+
+function getLifetime() { return Math.max(55, 180 - score * 8); }
+
+function reset() {
+  score = 0; duckX = W/2; duckDir = 1; moving = 0;
+  kabVisible = false; kabTimer = 0;
+  flashMsg = ''; flashTimer = 0; gameOver = false;
+  clearTimeout(spawnTimeout);
+  spawnKabanos();
+}
+
+function spawnKabanos() {
+  kabX = 65 + Math.random() * (W - 130);
+  kabVisible = true; kabTimer = 0;
+  kabLifetime = getLifetime();
+}
+
+function scheduleSpawn() { spawnTimeout = setTimeout(spawnKabanos, 700); }
+
+function tryGrab() {
+  if (!kabVisible || gameOver) return;
+  if (Math.abs(duckX - kabX) < 52) {
+    score++;
+    flashMsg = 'נלקח קבנוס! 🌭'; flashTimer = 55;
+    kabVisible = false; scheduleSpawn();
+  } else {
+    flashMsg = 'פספסת! 🦆'; flashTimer = 35;
+  }
+}
+
+function setMove(dir) { if (!gameOver) moving = dir; }
+
+function inRect(px, py, r) {
+  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+
+function handleDown(px, py) {
+  if (gameOver) { reset(); return; }
+  if (inRect(px, py, LEFT_BTN))  { setMove(-1); return; }
+  if (inRect(px, py, RIGHT_BTN)) { setMove(1);  return; }
+  if (inRect(px, py, GRAB_BTN))  { tryGrab();   return; }
+}
+
+function handleUp() { setMove(0); }
+
+function getCanvasPos(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  return [(clientX - r.left) * (W / r.width), (clientY - r.top) * (H / r.height)];
+}
+
+canvas.addEventListener('mousedown', e => { handleDown(...getCanvasPos(e.clientX, e.clientY)); });
+canvas.addEventListener('mouseup',    handleUp);
+canvas.addEventListener('mouseleave', handleUp);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); const t = e.changedTouches[0]; handleDown(...getCanvasPos(t.clientX, t.clientY)); }, {passive:false});
+canvas.addEventListener('touchend',   e => { e.preventDefault(); handleUp(); }, {passive:false});
+canvas.addEventListener('touchcancel',e => { e.preventDefault(); handleUp(); }, {passive:false});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft')  setMove(-1);
+  if (e.key === 'ArrowRight') setMove(1);
+  if (e.key === ' ' || e.key === 'z') { e.preventDefault(); tryGrab(); }
+  if ((e.key === 'r' || e.key === 'R') && gameOver) reset();
+});
+document.addEventListener('keyup', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') setMove(0);
+});
+
+function drawRoundRect(x, y, w, h, r) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r); 
+}
+
+function drawBtn(r, icon, label, active, isGrab) {
+  ctx.save();
+  const cx = r.x + r.w / 2;
+  const cy = r.y + r.h / 2;
+
+  if (isGrab) {
+    const radius = r.w / 2;
+    ctx.shadowColor = active ? '#ff9999' : '#aa2222';
+    ctx.shadowBlur = active ? 24 : 14;
+    ctx.fillStyle = active ? '#e05555' : '#993030';
+    ctx.beginPath(); ctx.arc(cx, cy, radius - 4, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    // border
+    ctx.strokeStyle = active ? '#ffd700' : 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = active ? 3 : 2;
+    ctx.beginPath(); ctx.arc(cx, cy, radius - 4, 0, Math.PI * 2); ctx.stroke();
+  } else {
+    ctx.shadowColor = active ? '#aaddff' : '#1a3a6a';
+    ctx.shadowBlur = active ? 22 : 12;
+    ctx.fillStyle = active ? '#4a8ae8' : '#1e4d99';
+    drawRoundRect(r.x + 4, r.y + 4, r.w - 8, r.h - 8, 20);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = active ? '#ffd700' : 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = active ? 3 : 2;
+    drawRoundRect(r.x + 4, r.y + 4, r.w - 8, r.h - 8, 20);
+    ctx.stroke();
+  }
+
+  // Icon
+  ctx.shadowBlur = 0;
+  ctx.font = '2.6em Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = active ? '#ffd700' : '#ffffff';
+  ctx.fillText(icon, cx, cy - 14);
+
+  // Label
+  ctx.font = active ? 'bold 15px Arial' : 'bold 14px Arial';
+  ctx.fillStyle = active ? '#ffd700' : 'rgba(255,255,255,0.8)';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(label, cx, r.y + r.h - 14);
+
+  ctx.restore();
+}
+
+function drawDuck(x, dir) {
+  const y = GROUND_Y - 5;
+  ctx.save();
+  ctx.fillStyle = '#ffd700';
+  ctx.beginPath(); ctx.ellipse(x, y, 28, 16, 0, 0, Math.PI*2); ctx.fill();
+  const hx = x + dir * 24;
+  ctx.beginPath(); ctx.arc(hx, y - 20, 14, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#ff8c00';
+  ctx.beginPath(); ctx.ellipse(hx + dir*18, y - 20, 9, 5, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(hx + dir*7, y - 24, 3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#e6b400';
+  ctx.beginPath(); ctx.ellipse(x, y - 4, 18, 10, 0, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#ff8c00'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(x-10, y+14); ctx.lineTo(x-10, y+24); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x+5, y+14); ctx.lineTo(x+5, y+24); ctx.stroke();
+  ctx.restore();
+}
+
+function drawKabanos(x, alpha) {
+  const y = GROUND_Y - 10;
+  ctx.save();
+  const kW = 18, kH = 65, kX = x - kW/2, kY = y - kH;
+  ctx.globalAlpha = alpha * 0.3;
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.ellipse(x, y + 2, 12, 4, 0, 0, Math.PI*2); ctx.fill();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = '#8B5E3C'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x, kY-2); ctx.lineTo(x, kY-14); ctx.stroke();
+  ctx.fillStyle = '#6B3A1F';
+  ctx.beginPath(); ctx.arc(x, kY-14, 3, 0, Math.PI*2); ctx.fill();
+  const grad = ctx.createLinearGradient(kX, 0, kX+kW, 0);
+  grad.addColorStop(0,'#4a1a08'); grad.addColorStop(0.2,'#8B2E0F');
+  grad.addColorStop(0.45,'#C0430E'); grad.addColorStop(0.6,'#A33A0C');
+  grad.addColorStop(0.8,'#6B230A'); grad.addColorStop(1,'#3a1206');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.roundRect(kX, kY, kW, kH, [5,5,6,6]); ctx.fill();
+  const hi = ctx.createLinearGradient(kX, 0, kX+kW*0.4, 0);
+  hi.addColorStop(0,'rgba(255,200,150,0.18)'); hi.addColorStop(1,'rgba(255,200,150,0)');
+  ctx.fillStyle = hi;
+  ctx.beginPath(); ctx.roundRect(kX+2, kY+4, kW*0.35, kH-8, 3); ctx.fill();
+  ctx.strokeStyle = 'rgba(60,10,0,0.45)'; ctx.lineWidth = 1;
+  for (let i=1; i<=5; i++) {
+    const wy = kY + (kH/6)*i;
+    ctx.beginPath(); ctx.moveTo(kX+2, wy);
+    ctx.bezierCurveTo(kX+kW*0.3, wy-2, kX+kW*0.7, wy+2, kX+kW-2, wy); ctx.stroke();
+  }
+  const tip = ctx.createLinearGradient(kX, kY+kH-10, kX, kY+kH);
+  tip.addColorStop(0,'#6B230A'); tip.addColorStop(1,'#2a0d04');
+  ctx.fillStyle = tip;
+  ctx.beginPath(); ctx.roundRect(kX+1, kY+kH-12, kW-2, 14, [2,2,6,6]); ctx.fill();
+  ctx.fillStyle = 'rgba(255,220,120,0.18)'; ctx.fillRect(kX, kY+kH/2-5, kW, 10);
+  ctx.restore();
+}
+
+function draw() {
+  ctx.fillStyle = '#228b22'; ctx.fillRect(0, 0, W, GROUND_Y + 30);
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, BTN_Y - 10, W, H - BTN_Y + 10);
+  ctx.fillStyle = '#654321'; ctx.fillRect(0, GROUND_Y+25, W, BTN_Y - GROUND_Y - 20);
+  ctx.fillStyle = '#006400'; ctx.fillRect(0, GROUND_Y+21, W, 6);
+
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 26px Arial';
+  ctx.textAlign = 'center'; ctx.fillText('ניקוד: ' + score, W/2, 36);
+  ctx.fillStyle = '#ffdc00'; ctx.font = '15px Arial';
+  ctx.fillText('מהירות: ' + (score+1) + 'x', W/2, 58);
+
+  if (kabVisible) {
+    let alpha = 1;
+    const timeLeft = kabLifetime - kabTimer;
+    if (timeLeft < 40) alpha = timeLeft / 40;
+    drawKabanos(kabX, alpha);
+  }
+
+  drawDuck(duckX, duckDir);
+
+  // Divider
+  ctx.strokeStyle = 'rgba(255,215,0,0.3)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, BTN_Y - 8); ctx.lineTo(W, BTN_Y - 8); ctx.stroke();
+
+  // Draw buttons
+  drawBtn(LEFT_BTN,  '◀', 'שמאל', moving === -1, false);
+  drawBtn(GRAB_BTN,  '🌭', 'לקחת', false, true);
+  drawBtn(RIGHT_BTN, '▶', 'ימין',  moving === 1,  false);
+
+  if (flashTimer > 0) {
+    ctx.fillStyle = '#ffdc00'; ctx.font = 'bold 28px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(flashMsg, W/2, GROUND_Y - 20);
+  }
+
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, BTN_Y - 10);
+    ctx.fillStyle = '#dc1e1e'; ctx.font = 'bold 38px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('המשחק נגמר!', W/2, H/2 - 100);
+    ctx.fillStyle = '#ffdc00'; ctx.font = 'bold 30px Arial';
+    ctx.fillText('ניקוד סופי: ' + score, W/2, H/2 - 50);
+    ctx.fillStyle = '#fff'; ctx.font = '20px Arial';
+    ctx.fillText('לחץ על המסך לנסות שוב', W/2, H/2);
+  }
+}
+
+function update() {
+  if (gameOver) return;
+  if (moving === 1) { duckX = Math.min(W-40, duckX + DUCK_SPEED); duckDir = 1; }
+  else if (moving === -1) { duckX = Math.max(40, duckX - DUCK_SPEED); duckDir = -1; }
+  if (kabVisible) {
+    kabTimer++;
+    if (kabTimer >= kabLifetime) {
+      kabVisible = false;
+      flashMsg = 'נפסלת! 💀'; flashTimer = 80; gameOver = true;
+    }
+  }
+  if (flashTimer > 0) flashTimer--;
+}
+
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+
+reset();
+loop();
+</script>
+</body>
+</html>
